@@ -52,10 +52,10 @@ val packageSets: Map<String, Pair<File, List<String>>> = linkedMapOf(
     "pixel9-sultra" to (File(repoRoot, "out/overlays_pixel_komodo") to listOf("tethering_payload.img")),
     // Infinity-X image (0.4.27), every phone: one set from that image. Its cellbroadcast module
     // is built from source (0.4.28): the guest keeps One UI's, like tethering.
-    "infinityx" to (File(repoRoot, "out/overlays_infinityx") to listOf("tethering_payload.img", "cellbroadcast_payload.img")),
+    "infinityx" to (File(repoRoot, "out/overlays_infinityx_r2") to listOf("tethering_payload.img", "cellbroadcast_payload.img")),
     // HyperOS image (docs/hyperos.md), made for the Z Fold8 Ultra and Z Fold8, on every phone from 0.4.31: Xiaomi's guarded jars,
     // the signal poll and the image's payloads.
-    "hyper-f8u" to (File(repoRoot, "out/overlays_hyperos_r10") to listOf("tethering_payload.img")),
+    "hyper-f8u" to (File(repoRoot, "out/overlays_hyperos_r11") to listOf("tethering_payload.img")),
 )
 // The series downloads (0.4.25): -Poneos.series=<id> packs only the sets that
 // app-android/packages/series.txt lists for it (ApkSeries keeps the same lists,
@@ -91,6 +91,13 @@ val sessionScripts: Map<String, File> = linkedMapOf(
     // so every image gets it without rebuilding one. oneos_switch.sh runs it only
     // when ONEOS_GUEST_EDM_STUB=1.
     "OneOSEdmStub.dex" to File(repoRoot, "switcher/assets/OneOSEdmStub.dex"),
+    // 0.4.33: Android's Bluetooth audio factory over Samsung's on the phones that
+    // only have Samsung's (switcher/native/oneos_btaudio.cpp, built by build.sh).
+    // oneos_switch.sh starts it only on such a phone.
+    "oneos_btaudio" to File(repoRoot, "switcher/assets/oneos_btaudio"),
+    // 0.4.33: the status bar's dimension overlays on bar phones
+    // (switcher/patches/OneOSOverlayDimen.java, build_overlay_dimen.sh).
+    "OneOSOverlayDimen.dex" to File(repoRoot, "switcher/assets/OneOSOverlayDimen.dex"),
     "host_installd.txt" to File(repoRoot, "switcher/patches/host_installd.txt"),
 )
 val switcherNotShipped = setOf("oneos_tunnel.sh", "7zz")
@@ -271,8 +278,13 @@ android {
         // auto-installer took the guest's system_server down at boot phase 520); the camera opens
         // without the 5 s Knox wait when Advanced's switch is on (Z Flip5); the composer's panel
         // modes are recorded before the guest's SurfaceFlinger starts, so a display failure says why.
-        versionCode = 49
-        versionName = "0.4.32"
+        // 0.4.33: the camera opens without Knox's 5 s wait by default (every 0.4.32
+        // camera report), Infinity-X's camera is Aperture (OPPO's needs the Find X9
+        // Ultra's camera config) and its status bar keeps off the corners, HyperOS's
+        // wallpaper app starts on one-panel phones, the composer capture is written
+        // where the logs are collected, and two new phones: Z Fold6, A07.
+        versionCode = 50
+        versionName = "0.4.33"
         // Send to the OneOS team (0.4.29, both editions): the report service's
         // address and its upload-only key, from the team's server (reports/deploy.sh
         // writes them). A build without them shows no Send; Share and Save stay.

@@ -1,5 +1,6 @@
-# OneOS package set hyper-f8u: sha256sum of out/overlays_hyperos_r10 (scripts/make-overlays.sh, 2026-10-30), minus tethering_payload.img.
-# app/build.gradle.kts packs exactly these files into the APK and fails the build when out/overlays_hyperos_r10 differs.
+# OneOS package set hyper-f8u: sha256sum of out/overlays_hyperos_r11 (scripts/make-overlays.sh, 2026-10-31), minus tethering_payload.img.
+# app/build.gradle.kts packs exactly these files into the APK and fails the build when out/overlays_hyperos_r11 differs.
+0baff1b12c489eaa379df95c700bb42ed3025177c64d6da6357163e754e05401  MiWallpaper_patched.apk
 b50f5e4ae8e5998b67e90bd296695b4d049d2ea9e1bcbb70d2522c65cd255763  OneOSGuest.apk
 f6e6cc651468f33182f9190c89c3432c8063d06040376672110fef62a320df52  OneOSPhoneInjection.apk
 086ed0fd44f1169f29a0f6dc1378b9c5530f7c9edf54e7f093b24c326b2239dc  adservices_payload.img

@@ -213,6 +213,7 @@ class ProfilesTest {
                 Profiles.F8U, Profiles.S_ULTRA_8850, Profiles.S_ULTRA_8750, Profiles.S_8750, Profiles.FOLD7, Profiles.S_PLUS_8750, Profiles.FOLD8,
                 Profiles.S_8850, Profiles.S_8850_JP, Profiles.S_ULTRA_8650, Profiles.S_8550, Profiles.S_PLUS_8550, Profiles.S_PLUS_8850,
                 Profiles.S_PLUS_9965, Profiles.FLIP7, Profiles.A56, Profiles.A57, Profiles.FLIP5,
+                Profiles.FOLD6, Profiles.A07,
             ),
             Profiles.BUILT_IN,
         )
@@ -240,8 +241,8 @@ class ProfilesTest {
         }
         assertNull(Profiles.F8U.choice(Images.ID_FIND_X9U))
         // The owner does not want the X9U (CN) image on the Fold: only the N6 and Pixel images there.
-        // The Fold7 (0.4.8) takes the N6 image only.
-        assertEquals(listOf(Profiles.F8U, Profiles.FOLD7, Profiles.FOLD8), Profiles.BUILT_IN.filter { it.form == FormFactor.FOLD })
+        // The Fold7 (0.4.8) takes the N6 image only; the Fold6 (0.4.33) the same.
+        assertEquals(listOf(Profiles.F8U, Profiles.FOLD7, Profiles.FOLD8, Profiles.FOLD6), Profiles.BUILT_IN.filter { it.form == FormFactor.FOLD })
         // The Find X9 Ultra builds run as a phone: the bar phones and (0.4.17) the Z Flip7 on its main screen.
         assertTrue(Profiles.BUILT_IN.filter { it.choice(Images.ID_FIND_X9U) != null }.all { it.form == FormFactor.BAR || it.form == FormFactor.FLIP })
         assertEquals(listOf(Profiles.FLIP7, Profiles.FLIP5), Profiles.BUILT_IN.filter { it.form == FormFactor.FLIP })
@@ -310,6 +311,15 @@ class ProfilesTest {
         assertNull(profile("SM-F731B", "b5q", "SM8650"))
         assertEquals(Profiles.A56, profile("SM-A566B", "a56x", "s5e8855")) // the A56 (0.4.31)
         assertNull(profile("SM-A566B", "a57x", "s5e8855")) // A56 model number, A57 codename
+        // 0.4.33: the Galaxy Z Fold6 (the S24 Ultra's SM8650, a fold) and the Galaxy A07 (MediaTek MT6789).
+        assertEquals(Profiles.FOLD6, profile("SM-F956B", "q6q", "SM8650"))
+        assertNull(profile("SM-F956B", "q6q", "SM8750"))
+        assertEquals(FormFactor.FOLD, Profiles.FOLD6.form)
+        assertEquals(listOf(Images.ID_FIND_N6, Images.ID_INFINITYX), Profiles.FOLD6.choices.map { it.imageId })
+        assertEquals(Profiles.A07, profile("SM-A075F", "a07", "MT6789"))
+        assertNull(profile("SM-A075F", "a07", "s5e8855"))
+        assertEquals(listOf(Images.ID_INFINITYX), Profiles.A07.choices.map { it.imageId })
+        assertEquals(listOf(Profiles.ID_NOTE_MEDIATEK, Profiles.ID_NOTE_OLDER_VENDOR), Profiles.A07.notes.map { it.id })
         assertNull(profile("SM-F766U", "b7s", "s5e9965"))
         assertNull(profile("SM-S947U", "m3q", "SM8850")) // S26+ model number, S26 Ultra codename
         // Galaxy S23 and S23+ (0.4.11).

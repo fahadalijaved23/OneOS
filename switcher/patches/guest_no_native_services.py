@@ -19,11 +19,14 @@ ActivityManagerService.startProcessLocked(..., HostingRecord, ...) and, when
 that returns null, logs "Unable to launch app ...: process is bad", brings the
 service down and returns the message: bindService then returns false to the
 app. The patch takes that path for a native-only service without calling
-startProcessLocked, after a Slog.w naming it. Chrome binds its Java renderer
-(SandboxedProcessService<n>) when the native one cannot be bound
-(ChildProcessConnection's fallback service), and that one starts through the
-guest's own zygote like any isolated service. Every app with a native-only
-service gets the same refusal instead of a stuck phone. Chrome's manifest has no
+startProcessLocked, after a Slog.w naming it. Every app with a native-only
+service gets the same refusal instead of a stuck phone. Chrome has no fallback
+from its native-only renderer (its allocator gives that service none: "Failed
+to establish the service connection" and a blank page, every guest), so
+oneos_switch.sh (0.4.33) gives the guest a /data/local/chrome-command-line with
+--javaless-renderers=disabled: Chrome then binds its Java renderers
+(SandboxedProcessService<n>), which start through the guest's own zygote like
+any isolated service. Chrome's manifest has no
 Java class for the native-only names, so starting them without zygote_next
 (clearing the flag) would only crash them.
 

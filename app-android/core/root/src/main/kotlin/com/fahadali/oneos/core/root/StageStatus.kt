@@ -267,7 +267,7 @@ data class StageStatus(
          * Flat names the session scripts bind, run or read (oneos_switch.sh's ONEOS_APP check, and more):
          * root's check_files list, with the Pixel set's oneos-telephony.jar and .sha256 (0.3.7).
          */
-        val LEFTOVER = Regex("""^(.*_patched.*|.*_payload\.img|.*\.apk|.*\.jar|.*\.so|.*\.sh|Fold8AngleRelay\.dex|zygote_exec|socket_exec|clean_apex_info_list\.xml|oneos-.*)$""")
+        val LEFTOVER = Regex("""^(.*_patched.*|.*_payload\.img|.*\.apk|.*\.jar|.*\.so|.*\.sh|Fold8AngleRelay\.dex|zygote_exec|oneos_btaudio|socket_exec|clean_apex_info_list\.xml|oneos-.*)$""")
 
         /** The list's entry ids and their output files. */
         val OUTPUTS: Map<String, String> = linkedMapOf(

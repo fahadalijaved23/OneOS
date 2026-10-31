@@ -745,6 +745,58 @@ else
     echo "Wallpapers.apk: fold card layout not as expected, grid overlay not built"
 fi
 
+# Patch one dex of a system APK and splice it back with the signing block as
+# it was (scripts/apk-replace-dex.py): PackageManager does not check the digests
+# of an APK on a system partition and still reads the platform certificate.
+# patch_apk_dex <apk> <out apk> <patcher in switcher/patches> <class the image
+# must have> <what it does>. The patcher refuses a body it was not written for;
+# then nothing is built.
+patch_apk_dex() {
+    rm -f "$2"
+    if ! unzip -p "$1" 'classes*.dex' 2>/dev/null | grep -aq "$4"; then
+        echo "$(basename "$1"): no $4, $5: not built"
+        return 0
+    fi
+    rm -rf "$WORK/pad"
+    java -jar "$APKTOOL" d -q -f -r -o "$WORK/pad" "$1"
+    if PAD_DIR=$(python3 -I "$ROOT/switcher/patches/$3" "$WORK/pad"); then
+        # Rebuild that one dex only; the others are left out of the build.
+        for d in "$WORK"/pad/smali*; do
+            [ "$(basename "$d")" = "$PAD_DIR" ] || rm -rf "$d"
+        done
+        PAD_DEX="$(echo "$PAD_DIR" | sed 's/^smali_//; s/^smali$/classes/').dex"
+        java -jar "$APKTOOL" b -q -o "$WORK/pad-rebuilt.apk" "$WORK/pad"
+        rm -rf "$WORK/pad-dex" "$WORK/pad-dex.jar" && mkdir -p "$WORK/pad-dex"
+        unzip -q -o "$WORK/pad-rebuilt.apk" "$PAD_DEX" -d "$WORK/pad-dex"
+        (cd "$WORK/pad-dex" && zip -q -0 "$WORK/pad-dex.jar" "$PAD_DEX")
+        python3 -I "$ROOT/scripts/check-dex.py" "$WORK/pad-dex.jar"
+        python3 -I "$ROOT/scripts/apk-replace-dex.py" "$1" "$PAD_DEX" "$WORK/pad-dex/$PAD_DEX" "$2"
+        echo "built $2 ($5, $PAD_DEX)"
+    else
+        echo "$(basename "$1"): $5: not built (see above)"
+    fi
+    rm -rf "$WORK/pad" "$WORK/pad-rebuilt.apk" "$WORK/pad-dex" "$WORK/pad-dex.jar"
+}
+
+# HyperOS's wallpaper app on a one-panel phone (switcher/patches/
+# hyperos_miwallpaper_null.py): it died in Application.onCreate on every start
+# when the lock wallpaper had no effect type yet (0.4.32, Galaxy S25), so there
+# was no wallpaper. guest_prepare.sh binds MiWallpaper_patched.apk over the
+# image's. HyperOS images keep /product at the image root.
+rm -f "$OUT/MiWallpaper_patched.apk"
+MIWP=""
+for p in /product/app/MiWallpaper/MiWallpaper.apk /system/product/app/MiWallpaper/MiWallpaper.apk; do
+    in_image "$p" && { MIWP=$p; break; }
+done
+if [ -n "$MIWP" ]; then
+    "$DEBUGFS" -R "dump $MIWP $WORK/MiWallpaper.apk" "$IMG" 2>/dev/null
+    patch_apk_dex "$WORK/MiWallpaper.apk" "$OUT/MiWallpaper_patched.apk" hyperos_miwallpaper_null.py \
+        'Lcom/miui/miwallpaper/utils/WallpaperTypeUtils;' "wallpaper app starts with an unknown effect type"
+    rm -f "$WORK/MiWallpaper.apk"
+else
+    echo "MiWallpaper.apk: not in the image, nothing to patch"
+fi
+
 # Pixel's status bar (run 42): SystemUIGoogle's StatusBarContentInsetsProvider
 # leaves ongoing_appops_dot_min_padding (20dp, for the privacy dot) on the end
 # side and only rounded_corner_content_padding on the start side, which points to
@@ -760,6 +812,15 @@ fi
 # configuration the overlay lacks and a phone panel can match: that target
 # value would win over the overlay's (sw1000dp and up is ignored here).
 SYSUI=/system/system_ext/priv-app/SystemUIGoogle/SystemUIGoogle.apk
+# Infinity-X (0.4.33): AOSP's SystemUI has the same insets provider and the same
+# gap (rounded_corner_content_padding points to the framework's 0dp on Samsung's
+# vendor; A56 report a321c25b: "the clock padding on status bar is too close to
+# the right corner"). Not ColorOS's SystemUI (same package, OPPO's own layout):
+# an image with oplus-telephony-common.jar keeps its own.
+if ! in_image "$SYSUI" && ! in_image /system/system_ext/framework/oplus-telephony-common.jar &&
+   in_image /system/system_ext/priv-app/SystemUI/SystemUI.apk; then
+    SYSUI=/system/system_ext/priv-app/SystemUI/SystemUI.apk
+fi
 SB_RRO="$ROOT/switcher/overlays/pixel_statusbar"
 SB_DIMENS="rounded_corner_content_padding ongoing_appops_dot_min_padding status_bar_padding_end"
 # "<name> <(config)>" for each of those dimens in an APK's resource dump.
@@ -778,9 +839,9 @@ if in_image "$SYSUI"; then
     done
     SB_OVERLAYABLE=$("$BT/aapt2" dump overlayable "$WORK/SystemUIGoogle.apk" 2>/dev/null | head -n 3) || true
     if [ -n "$SB_MISSING" ]; then
-        echo "SystemUIGoogle.apk: no dimen$SB_MISSING, status bar overlay not built"
+        echo "$(basename "$SYSUI"): no dimen$SB_MISSING, status bar overlay not built"
     elif [ -n "$SB_OVERLAYABLE" ]; then
-        echo "SystemUIGoogle.apk declares overlayable resources, status bar overlay not built"
+        echo "$(basename "$SYSUI") declares overlayable resources, status bar overlay not built"
     else
         # No deduping: aapt2 drops the sw600dp value equal to the default one,
         # and the image's sw600dp 0dp would then win on the inner panel.
@@ -799,7 +860,7 @@ if in_image "$SYSUI"; then
             echo "pixel_statusbar overlay: unexpected resources ($(tr '\n' ' ' < "$WORK/sb_cfgs.txt")), not built" >&2
             exit 1
         elif [ -n "$SB_UNCOVERED" ]; then
-            echo "SystemUIGoogle.apk has$SB_UNCOVERED, which the overlay does not cover: status bar overlay not built"
+            echo "$(basename "$SYSUI") has$SB_UNCOVERED, which the overlay does not cover: status bar overlay not built"
         else
             "$BT/zipalign" -p -f 4 "$WORK/sb.apk" "$WORK/sb-aligned.apk"
             "$BT/apksigner" sign --ks "${KEYSTORE:-$HOME/.android/debug.keystore}" \
@@ -810,7 +871,7 @@ if in_image "$SYSUI"; then
         fi
     fi
 else
-    echo "SystemUIGoogle.apk: not in the image, no status bar overlay"
+    echo "SystemUIGoogle.apk (or an AOSP SystemUI.apk): not in the image, no status bar overlay"
 fi
 
 # The guest's own APEX payloads, which guest_prepare.sh loop-mounts into the

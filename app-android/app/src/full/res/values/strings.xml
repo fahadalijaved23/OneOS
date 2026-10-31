@@ -109,7 +109,7 @@
     <string name="confirm_gms_hidden">Google apps are hidden this time.</string>
     <string name="confirm_heat_cap_off">Cool down when hot is off: the phone can get very hot (Advanced).</string>
     <string name="confirm_sec_ims">One UI\'s calling service (VoLTE) is tried in %1$s this time (experimental, Advanced).</string>
-    <string name="confirm_edm_stub">The camera is tried without the Knox wait in %1$s this time (experimental, Advanced).</string>
+    <string name="confirm_edm_stub">Camera without the Knox wait is off (Advanced): most camera apps in %1$s will time out opening the camera.</string>
     <string name="confirm_setup_wizard">On a new setup, %1$s starts with its own setup screens: skip signing in to Google, and skip the screen lock, fingerprint and face (the phone\'s lock stays One UI\'s).</string>
     <string name="confirm_switch_go">Switch</string>
     <string name="confirm_refused_tail">Nothing changed. One UI keeps running.</string>

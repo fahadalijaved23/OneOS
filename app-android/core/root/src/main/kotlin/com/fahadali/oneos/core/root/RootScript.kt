@@ -105,7 +105,7 @@ object RootScript {
     /** Session scripts from switcher/assets and the expected installd table, staged with every set. */
     val SCRIPTS: List<String> = listOf(
         "oneos_switch.sh", "guest_prepare.sh", "guest_start.sh", "guest_props.sh", "return_to_oneui.sh",
-        "check_host_apex.sh", "bridges.sh", "fold8_coloros.sh", "fold8_pixel.sh", "guest_google.sh", "zygote_exec", "OneOSEdmStub.dex", "host_installd.txt",
+        "check_host_apex.sh", "bridges.sh", "fold8_coloros.sh", "fold8_pixel.sh", "guest_google.sh", "zygote_exec", "OneOSEdmStub.dex", "oneos_btaudio", "OneOSOverlayDimen.dex", "host_installd.txt",
     )
 
     const val RAW_NAME = "system.raw"

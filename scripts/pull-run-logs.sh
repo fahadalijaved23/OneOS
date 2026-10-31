@@ -39,7 +39,17 @@ for f in \$L/head/*; do
 done
 cp -r \$S/*.log \$S/diag_* $TMP/ 2>/dev/null
 cp \$S/data/takeover.log $TMP/takeover_inner.log 2>/dev/null
-cp \$S/data/call_audio.log \$S/data/audio_keeper.log \$S/data/oneos_a2dp.log $TMP/ 2>/dev/null
+# Every other .log the guest wrote in its own /data (call_audio, audio_keeper,
+# oneos_a2dp, backlight, oneos_composer_before_sf, ...). The app's collector
+# takes the same sweep (assets/logs/collect.list, logs.guest); naming them one
+# by one here meant a new one was silently left behind, the composer
+# diagnostics of 0.4.32 were. takeover.log is already in, under its own name.
+# (No apostrophe anywhere in this body: it is inside a single-quoted su -c.)
+for f in \$S/data/*.log; do
+  [ -f \$f ] || continue
+  case \$f in */takeover.log) continue ;; esac
+  cp \$f $TMP/ 2>/dev/null
+done
 cp /data/local/tmp/ui_activator.log $TMP/ 2>/dev/null
 cd $TMP && /data/adb/ksu/bin/busybox tar czf $TMP.tgz . && chmod 644 $TMP.tgz && rm -rf $TMP
 ls -l $TMP.tgz'"

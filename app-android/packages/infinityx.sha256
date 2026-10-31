@@ -1,7 +1,8 @@
-# OneOS package set infinityx: sha256sum of out/overlays_infinityx (scripts/make-overlays.sh, 2026-10-29; services_patched.jar with patches/guest_sec_ims_signature.py), minus tethering_payload.img and cellbroadcast_payload.img (One UI's modules stay, 0.4.28).
-# app/build.gradle.kts packs exactly these files into the APK and fails the build when out/overlays_infinityx differs.
+# OneOS package set infinityx: sha256sum of out/overlays_infinityx_r2 (scripts/make-overlays.sh, 2026-10-29; services_patched.jar with patches/guest_sec_ims_signature.py; 2026-10-31 OneOSPixelStatusBar.apk), minus tethering_payload.img and cellbroadcast_payload.img (One UI's modules stay, 0.4.28).
+# app/build.gradle.kts packs exactly these files into the APK and fails the build when out/overlays_infinityx_r2 differs.
 b50f5e4ae8e5998b67e90bd296695b4d049d2ea9e1bcbb70d2522c65cd255763  OneOSGuest.apk
 f6e6cc651468f33182f9190c89c3432c8063d06040376672110fef62a320df52  OneOSPhoneInjection.apk
+466e8b95c9805c6544f736c0a134f6b0de6035232b4473897dc64508bb91114a  OneOSPixelStatusBar.apk
 ffbafbf7336e69aa9e06e4918afd3956055e8b796f1b7a3b428e78ca06a3905a  adservices_payload.img
 eb21c68f95d0095707fece28ee71865b839b2e2e563badb3272ac155f867a056  appsearch_payload.img
 f8c422dcc7007caf80fff200d36f2d9a3e46b2756f28c8f38f6fc4f539bf0053  art_payload.img

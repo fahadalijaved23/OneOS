@@ -176,11 +176,16 @@ object SessionPrefs {
 
     /**
      * Answer Knox's edmnativehelper while the other system runs, so a camera open
-     * is not 5 s late (Advanced; `ONEOS_GUEST_EDM_STUB`). Off by default: the
-     * stand-in answers every Knox question "allowed", and answering wrongly would
-     * turn the camera off rather than just make it slow.
+     * is not 5 s late (Advanced; `ONEOS_GUEST_EDM_STUB`). On by default since
+     * 0.4.33: in the 0.4.32 reports every camera open in Infinity-X, Pixel 9 Pro
+     * XL and ColorOS sessions waited the full 5 s for it (Z Flip5 48 times, S23
+     * 16, S24/S25 Ultra, A56, A57) and CameraX apps gave up at 3 s
+     * (ERROR_CAMERA_OPEN_TIMEOUT), so the camera "did not work" while Open Camera,
+     * which waits longer, did. The stand-in answers "allowed", what One UI's own
+     * service answers on a phone without a Knox camera policy; it can be turned
+     * off in Advanced.
      */
-    fun edmStub(ctx: Context): Boolean = p(ctx).getBoolean("edm_stub", false)
+    fun edmStub(ctx: Context): Boolean = p(ctx).getBoolean("edm_stub", true)
 
     fun setEdmStub(ctx: Context, on: Boolean) {
         p(ctx).edit().putBoolean("edm_stub", on).apply()

@@ -364,6 +364,17 @@ echo "Host state recorded: $(wc -l < "$STAGE/host_state.before") entries"
 # next to the real camera. Scaled to the panel's physical width
 # (cutoutPathParserInfo physicalDisplayWidth / displayWidth).
 rm -f "$STAGE/host_screenhole"
+# The display modes as One UI's SurfaceFlinger has them, while it is alive (a
+# .log in the stage goes into the session's logs): HyperOS's SurfaceFlinger
+# aborts at the first display connect on the S24 Ultra, S23 and Z Flip5 ("No
+# matching frame rate modes" with an unrestricted policy) before it logs any.
+timeout 10 dumpsys SurfaceFlinger --display-id > "$STAGE/display_modes_host.log" 2>&1
+timeout 10 dumpsys display 2>/dev/null | grep -E 'mSupportedModes|mActiveModeId|mDefaultModeId|DisplayModeRecord|mUserPreferredModeId|mDisplayModeSpecs|DisplayDeviceInfo\{' |
+    cut -c1-3000 >> "$STAGE/display_modes_host.log"
+for p in /sys/class/lcd/panel /sys/class/lcd/panel1; do
+    [ -d "$p" ] || continue
+    for n in vrr vrr_lfd; do echo "$p/$n (One UI): $(cat "$p/$n" 2>&1 | tr '\n' ' ' | cut -c1-600)"; done
+done >> "$STAGE/display_modes_host.log"
 HLINE=$(dumpsys display 2>/dev/null | grep 'DisplayDeviceInfo{' | grep 'type INTERNAL' | grep 'FLAG_ALLOWED_TO_BE_DEFAULT_DISPLAY')
 HOLE=$(printf '%s\n' "$HLINE" |
     sed -n 's/.*boundingRect={Bounds=\[Rect(-\{0,1\}[0-9]*, -\{0,1\}[0-9]* - -\{0,1\}[0-9]*, -\{0,1\}[0-9]*), Rect(\([0-9]*\), \([0-9]*\) - \([0-9]*\), \([0-9]*\)).*/\1,\2:\3,\4/p')
@@ -1101,6 +1112,65 @@ else
     echo "Host audioserver kept: $(getprop init.svc.audioserver)"
 fi
 
+# Bluetooth audio on a phone with only Samsung's Bluetooth audio HAL (0.4.33).
+# The SM8750 and older Galaxies register vendor.samsung.hardware.bluetooth.audio.
+# ISehBluetoothAudioProviderFactory and not Android's IBluetoothAudioProviderFactory,
+# so a guest's Bluetooth found no audio HAL: devices connected and the sound
+# stayed on the phone (S24 Ultra, S25 Ultra, A57 reports). Samsung's interface is
+# Android's version 2 under other names; oneos_btaudio (switcher/native) serves
+# Android's factory and forwards to Samsung's. The guest's stack asks
+# servicemanager whether the name is declared before it looks, so the instance
+# is declared for the session: a copy of the vendor manifest fragment that
+# declares Samsung's HAL, with Android's factory added, is bound over it, and
+# /apex/apex-info-list.xml is touched, which makes servicemanager read the
+# manifests again (libvintf keys its cache on that file's mtime). Both go back
+# on the return (return_to_oneui.sh): One UI's own stack would otherwise wait
+# for a factory nobody serves. Samsung's audio HAL carries Qualcomm's provider
+# for Android's factory as well and tries to register it when a guest opens
+# its Bluetooth module ("BtAudioAIDLService: Could not register ...
+# IBluetoothAudioProviderFactory/default, status=-3", S24 Ultra ColorOS
+# sessions): with the declaration that now succeeds and replaces the bridge's
+# registration, which is as good (the Fold8 Ultra has exactly that); the return
+# restarts the audio HAL after taking the declaration back. Only when Samsung's
+# factory is registered and Android's is not; ONEOS_GUEST_BT_AUDIO_BRIDGE=0
+# leaves it all alone.
+rm -f "$STAGE/bt_bridge_vintf"
+BTA_AOSP=android.hardware.bluetooth.audio.IBluetoothAudioProviderFactory/default
+BTA_SEH=vendor.samsung.hardware.bluetooth.audio.ISehBluetoothAudioProviderFactory/default
+if [ "${ONEOS_GUEST_BT_AUDIO_BRIDGE:-1}" = 1 ] && [ -f "$STAGE/oneos_btaudio" ] && [ ! -L "$STAGE/oneos_btaudio" ] &&
+    timeout 5 service check "$BTA_SEH" 2>/dev/null | grep -q ": found" &&
+    timeout 5 service check "$BTA_AOSP" 2>/dev/null | grep -q ": not found"; then
+    chmod 755 "$STAGE/oneos_btaudio"
+    BT_FRAG=$(grep -l -s "vendor.samsung.hardware.bluetooth.audio" /vendor/etc/vintf/manifest/*.xml | head -n 1)
+    [ -n "$BT_FRAG" ] || BT_FRAG=$(grep -l -s "vendor.samsung.hardware.bluetooth.audio" /vendor/etc/vintf/manifest.xml)
+    BT_COPY="$STAGE/oneos_bt_vintf.xml"
+    if [ -z "$BT_FRAG" ]; then
+        echo "Bluetooth audio bridge: no vendor manifest declares Samsung's HAL; not started"
+    elif [ "$(grep -c '</manifest>' "$BT_FRAG")" != 1 ]; then
+        echo "Bluetooth audio bridge: $BT_FRAG is not one manifest; not started"
+    else
+        $BB awk '/<\/manifest>/ {
+            print "    <hal format=\"aidl\">"
+            print "        <name>android.hardware.bluetooth.audio</name>"
+            print "        <version>2</version>"
+            print "        <fqname>IBluetoothAudioProviderFactory/default</fqname>"
+            print "    </hal>"
+        } { print }' "$BT_FRAG" > "$BT_COPY"
+        chmod 644 "$BT_COPY"
+        chcon u:object_r:vendor_configs_file:s0 "$BT_COPY" 2>/dev/null
+        if grep -q "IBluetoothAudioProviderFactory/default" "$BT_COPY" && $BB mount -o bind,ro "$BT_COPY" "$BT_FRAG"; then
+            echo "$BT_FRAG" > "$STAGE/bt_bridge_vintf"
+            touch /apex/apex-info-list.xml
+            (umask 027; $BB nohup "$STAGE/oneos_btaudio" > "$STAGE/oneos_btaudio.log" 2>&1 </dev/null &)
+            n=0
+            while [ $n -lt 25 ] && ! timeout 5 service check "$BTA_AOSP" 2>/dev/null | grep -q ": found"; do n=$((n + 1)); sleep 0.2; done
+            echo "Bluetooth audio bridge: $(timeout 5 "$STAGE/oneos_btaudio" --check 2>&1) (manifest: $BT_FRAG; $(head -n 1 "$STAGE/oneos_btaudio.log" 2>/dev/null))"
+        else
+            echo "Bluetooth audio bridge: could not declare the factory over $BT_FRAG; not started"
+        fi
+    fi
+fi
+
 # Same handover for wifi. The guest's WifiService binds IWificond (service
 # "wifinl80211") and drives the vendor HAL through it. Samsung's wificond is
 # still holding the client interface that One UI's (now dead) WifiService
@@ -1139,6 +1209,35 @@ fi
 # Find N animation (run 30 logcat). The owner wants ColorOS's animation kept,
 # so make sure nothing in the staged /data shadows it.
 rm -f "$STAGE/data/local/bootanimation.zip"
+# Chrome in the guest (0.4.33): on Android 17 Chrome starts its renderers as
+# native-only services (NativeOnlySandboxedProcessService, through zygote_next),
+# which the guest cannot start: zygote_next is One UI's, so
+# guest_no_native_services.py refuses them, and Chrome has no fallback for that
+# service, so no page ever rendered ("Failed to establish the service
+# connection", every guest since 0.4.25). Chrome only takes that
+# path while its JavalessRenderers feature is on, and the --javaless-renderers
+# switch decides first (ChildProcessCreationParamsImpl, JavalessRenderersFeatureList);
+# Chrome reads /data/local/chrome-command-line with no further condition
+# (CommandLineInitUtil). With the switch at disabled Chrome uses its Java
+# renderers, which start through the guest's own app zygote like WebView's.
+# The guest's /data/local, written before the guest runs; data the guest can
+# write, so never through a link. A file the user made keeps its flags.
+# ONEOS_GUEST_CHROME_JAVA_RENDERERS=0 leaves it alone.
+CCL="$STAGE/data/local/chrome-command-line"
+if [ "${ONEOS_GUEST_CHROME_JAVA_RENDERERS:-1}" = 1 ] && [ -d "$STAGE/data/local" ] && [ ! -L "$STAGE/data/local" ]; then
+    if [ -L "$CCL" ] || { [ -e "$CCL" ] && [ ! -f "$CCL" ]; }; then
+        echo "Chrome: $CCL is not a plain file; left alone"
+    elif [ ! -e "$CCL" ]; then
+        (set -C; echo "_ --javaless-renderers=disabled" > "$CCL") 2>/dev/null && chmod 644 "$CCL" &&
+            echo "Chrome: Java renderers (data/local/chrome-command-line made)"
+    elif ! grep -q -- "--javaless-renderers" "$CCL"; then
+        CCL_LINE="$(head -n 1 "$CCL") --javaless-renderers=disabled"
+        rm -f "$CCL" && (set -C; echo "$CCL_LINE" > "$CCL") 2>/dev/null && chmod 644 "$CCL" &&
+            echo "Chrome: Java renderers (added to the user's chrome-command-line)"
+    else
+        echo "Chrome: chrome-command-line already sets $(grep -o -- '--javaless-renderers=[a-z]*' "$CCL" | head -n 1)"
+    fi
+fi
 # return_to_oneui.sh creates data/oneos_rec_stop as its first step (for the
 # screen recording) and nothing removes it unless a recording starts; the
 # session sampler below stops on it, so clear the last session's.
@@ -1153,6 +1252,11 @@ cp -f "$STAGE/guest_start.sh" "$STAGE/data/guest_start.sh"
 chmod 755 "$STAGE/data/guest_start.sh"
 cp -f "$STAGE/zygote_exec" "$STAGE/data/zygote_exec"
 chmod 755 "$STAGE/data/zygote_exec"
+# The dimension overlay helper the UI activator runs in the guest (0.4.33).
+rm -f "$STAGE/data/oneos_overlay_dimen.dex"
+if [ -f "$STAGE/OneOSOverlayDimen.dex" ] && [ ! -L "$STAGE/OneOSOverlayDimen.dex" ]; then
+    cp -f "$STAGE/OneOSOverlayDimen.dex" "$STAGE/data/oneos_overlay_dimen.dex" && chmod 644 "$STAGE/data/oneos_overlay_dimen.dex"
+fi
 # HyperOS: the launcher for hyos_spawner (guest_start.sh), from its set only.
 rm -f "$STAGE/data/socket_exec"
 if [ -f "$STAGE/socket_exec" ] && [ ! -L "$STAGE/socket_exec" ]; then
@@ -1374,9 +1478,11 @@ while true; do
             # patches/OneOSEdmStub.java answers every code with the single plain
             # int32 1 that One UI's own service replies with, so no transaction
             # number is assumed. uid system through app_process, like the angle
-            # relay; it exits with the guest. Off unless ONEOS_GUEST_EDM_STUB=1:
-            # answering wrongly would turn the camera OFF, so it is opt-in until a
-            # phone whose camera fails today has tried it.
+            # relay; it exits with the guest. ONEOS_GUEST_EDM_STUB=1, which the app
+            # sends by default since 0.4.33 (Advanced can turn it off): every
+            # camera open in the 0.4.32 reports waited the 5 s (Infinity-X, Pixel
+            # and ColorOS on the S23, S24/S25 Ultra, A56, A57, Z Flip5) and
+            # CameraX apps gave up with ERROR_CAMERA_OPEN_TIMEOUT.
             if [ \"${ONEOS_GUEST_EDM_STUB:-0}\" = 1 ] && [ -f $STAGE/OneOSEdmStub.dex ] && [ ! -L $STAGE/OneOSEdmStub.dex ]; then
                 (umask 027; CLASSPATH=$STAGE/OneOSEdmStub.dex $BB nohup $BB setuidgid system /system/bin/app_process /system/bin OneOSEdmStub \$PID > $STAGE/edm_stub.log 2>&1 </dev/null &)
                 sleep 2
@@ -1624,21 +1730,41 @@ while true; do
                    gxo fabricate --target android --name OneOSCutoutRect android:string/config_mainBuiltInDisplayCutoutRectApproximation string \"\$HCS\"; then
                     OVS='OneOSCutout OneOSCutoutRect'
                 fi
-                case \"\$HSB\" in
-                    ''|*[!0-9]*) ;;
-                    *) for r in status_bar_height_default:OneOSStatusBarHeight status_bar_height_portrait:OneOSStatusBarHeightPortrait; do
-                           gxo fabricate --target android --name \${r#*:} android:dimen/\${r%%:*} 0x05 \$((HSB * 256)) && OVS=\"\$OVS \${r#*:}\"
-                       done ;;
-                esac
-                case \"\$HRC\" in
-                    ''|*[!0-9]*) ;;
-                    *) for r in rounded_corner_radius:OneOSCornerRadius rounded_corner_radius_top:OneOSCornerRadiusTop rounded_corner_radius_bottom:OneOSCornerRadiusBottom; do
-                           gxo fabricate --target android --name \${r#*:} android:dimen/\${r%%:*} 0x05 \$((HRC * 256)) && OVS=\"\$OVS \${r#*:}\"
-                       done ;;
-                esac
+                # Height, corner radius and the corner padding are dimensions,
+                # which cmd overlay fabricate cannot make (integer types 16-31
+                # only: \"dataType is out of range\"), so up to 0.4.32 they failed
+                # on every phone and only the cutout applied (A56 Pixel session
+                # 5d1d3007: a 92 px bar for One UI's 101, the clock 30 px from a
+                # 118 px corner). OneOSOverlayDimen (patches/, in the guest's
+                # /data) registers them; enabled like the rest. Bar phones only:
+                # on a Fold the switch measured whichever panel was on, and one
+                # value would be wrong on the other.
+                gdim() { timeout 30 $BB nsenter -t \$PID -m /system/bin/sh /data/oneos_genv.sh /system/bin/env CLASSPATH=/data/oneos_overlay_dimen.dex /system/bin/app_process /system/bin OneOSOverlayDimen \"\$@\" 2>&1 | grep -E '^(registered|failed)' | tail -n 1; }
+                DIMS=''
+                if [ $GUEST_FOLD_FORM = 0 ] && [ -f $STAGE/data/oneos_overlay_dimen.dex ]; then
+                    case \"\$HSB\" in
+                        ''|*[!0-9]*) ;;
+                        *) r=\$(gdim OneOSStatusBarHeight android android:dimen/status_bar_height_default=\$HSB android:dimen/status_bar_height_portrait=\$HSB)
+                           case \"\$r\" in registered*) OVS=\"\$OVS OneOSStatusBarHeight\" ;; *) DIMS=\"\$DIMS height: \$r;\" ;; esac ;;
+                    esac
+                    case \"\$HRC\" in
+                        ''|*[!0-9]*) ;;
+                        *) r=\$(gdim OneOSCornerRadius android android:dimen/rounded_corner_radius=\$HRC android:dimen/rounded_corner_radius_top=\$HRC android:dimen/rounded_corner_radius_bottom=\$HRC)
+                           case \"\$r\" in registered*) OVS=\"\$OVS OneOSCornerRadius\" ;; *) DIMS=\"\$DIMS radius: \$r;\" ;; esac
+                           # Where the corner's curve leaves the status bar's icons
+                           # room: at a third of the bar's height (the top of the
+                           # clock's digits). Only over the 8dp the static RRO
+                           # gives (24 px), both sides alike.
+                           PAD=\$(awk -v r=\"\$HRC\" -v h=\"\${HSB:-0}\" 'BEGIN { y = h / 3; p = 0; if (y < r) p = r - sqrt(r * r - (r - y) * (r - y)); printf \"%d\", p + 0.5 }')
+                           if [ \"\${PAD:-0}\" -gt 24 ]; then
+                               r=\$(gdim OneOSCornerPadding com.android.systemui com.android.systemui:dimen/rounded_corner_content_padding=\$PAD com.android.systemui:dimen/ongoing_appops_dot_min_padding=\$PAD)
+                               case \"\$r\" in registered*) OVS=\"\$OVS OneOSCornerPadding\" ;; *) DIMS=\"\$DIMS padding \$PAD px: \$r;\" ;; esac
+                           fi ;;
+                    esac
+                fi
                 ON=''
                 for o in \$OVS; do gxo enable --user 0 com.android.shell:\$o && ON=\"\$ON \$o\"; done
-                echo \"[UI Activator] status bar: One UI's cutout '\${HCS:-none}', height \${HSB:-?} px, corner radius \${HRC:-?} px; overlays on:\${ON:- none}\"
+                echo \"[UI Activator] status bar: One UI's cutout '\${HCS:-none}', height \${HSB:-?} px, corner radius \${HRC:-?} px; overlays on:\${ON:- none}\${DIMS:+ (not made:\$DIMS)}\"
             fi
             # Fold test (fold layout only). On every lid switch event record what
             # the guest did: device state, layout, both touch mappers and
@@ -2106,6 +2232,10 @@ if [ "$RETURN_MAX" -gt 0 ]; then
                     done
                     for b in /sys/class/backlight/panel0-backlight /sys/class/backlight/panel1-backlight /sys/class/backlight/panel /sys/class/backlight/panel1; do [ -d \$b ] || continue; echo \"\$b: \$(cat \$b/brightness) actual=\$(cat \$b/actual_brightness) max=\$(cat \$b/max_brightness)\"; done > \$D/backlight.txt 2>&1
                     tail -5 $STAGE/data/backlight.log >> \$D/backlight.txt 2>/dev/null
+                    # Samsung's panel refresh (S23 Pixel session f848ebc6: 30 fps
+                    # while the guest ran 120 Hz, every frame late at the composer):
+                    # the rate the panel runs and who holds a low-frequency floor.
+                    for p in /sys/class/lcd/panel /sys/class/lcd/panel1; do [ -d \$p ] || continue; for n in vrr vrr_lfd; do echo \"\$p/\$n: \$(cat \$p/\$n 2>&1 | tr '\n' ' ' | cut -c1-600)\"; done; done > \$D/panel_refresh.txt 2>&1
                     timeout 15 $BB nsenter -t \$SFP -m /system/bin/sh /data/oneos_genv.sh /system/bin/dumpsys power > \$D/power.txt 2>&1
                     timeout 15 $BB nsenter -t \$SFP -m /system/bin/sh /data/oneos_genv.sh /system/bin/dumpsys device_state > \$D/device_state.txt 2>&1
                     timeout 15 $BB nsenter -t \$SFP -m /system/bin/sh /data/oneos_genv.sh /system/bin/dumpsys oplus_vrr_service > \$D/vrr.txt 2>&1

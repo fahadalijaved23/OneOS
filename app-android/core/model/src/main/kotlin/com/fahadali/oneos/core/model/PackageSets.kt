@@ -384,7 +384,7 @@ object PackageSets {
     val INFINITYX = PackageSet(
         id = ID_INFINITYX,
         imageId = Images.ID_INFINITYX,
-        sourceDir = "out/overlays_infinityx",
+        sourceDir = "out/overlays_infinityx_r2",
         files = listOf(
             PackageFile("services_patched.jar", FileRole.GUARD_JAR),
             PackageFile("oplus-services_patched.jar", FileRole.GUARD_JAR),
@@ -398,10 +398,12 @@ object PackageSets {
             PackageFile("oneos-telephony.sha256", FileRole.INJECTION_SHA256),
             PackageFile("OneOSPhoneInjection.apk", FileRole.RRO),
             PackageFile(GUEST_APP, FileRole.GUEST_APP),
+            // 0.4.33: the status bar's corner padding, as on the Pixel images (r2).
+            PackageFile("OneOSPixelStatusBar.apk", FileRole.RRO),
         ) + (COMMON_PAYLOADS + listOf("bt", "nfcservices", "telephonycore", "conscrypt", "profiling", "gmssystem"))
             .map { PackageFile("${it}_payload.img", FileRole.APEX_PAYLOAD) },
         omitted = listOf(TETHERING, CELLBROADCAST),
-        approxBytes = 531_514_466L,
+        approxBytes = 531_537_753L,
         hasReturnApp = true,
     )
 
@@ -426,7 +428,7 @@ object PackageSets {
     val HYPER_F8U = PackageSet(
         id = ID_HYPER_F8U,
         imageId = Images.ID_HYPEROS_LHASA,
-        sourceDir = "out/overlays_hyperos_r10",
+        sourceDir = "out/overlays_hyperos_r11",
         files = listOf(
             PackageFile("services_patched.jar", FileRole.GUARD_JAR),
             PackageFile("miui-services_patched.jar", FileRole.GUARD_JAR),
@@ -445,9 +447,11 @@ object PackageSets {
             PackageFile(GUEST_APP, FileRole.GUEST_APP),
             PackageFile("socket_exec", FileRole.GUEST_FIX),
             PackageFile("libaudiohal_aidl_patched.so", FileRole.GUEST_FIX),
+            // 0.4.33: the wallpaper app starts on a one-panel phone (r11).
+            PackageFile("MiWallpaper_patched.apk", FileRole.GUEST_FIX),
         ) + (COMMON_PAYLOADS + "bt").map { PackageFile("${it}_payload.img", FileRole.APEX_PAYLOAD) },
         omitted = listOf(TETHERING),
-        approxBytes = 422_134_172L,
+        approxBytes = 437_391_809L,
         hasReturnApp = true,
     )
 

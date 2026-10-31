@@ -853,6 +853,23 @@ if [ "${ONEOS_GUEST_IMS_EXT_BACKOFF:-1}" = 1 ] && [ -f "$STAGE/ims-ext-common_pa
     echo "Bound ims-ext-common_patched.jar -> $GUEST_PRODUCT/framework/ims-ext-common.jar"
 fi
 
+# HyperOS's wallpaper app with an unknown effect type allowed (scripts/
+# make-overlays.sh, patches/hyperos_miwallpaper_null.py): on a one-panel phone
+# it died on every start (0.4.32, Galaxy S25: no wallpaper at all).
+# ONEOS_GUEST_MIWALLPAPER_FIX=0 keeps the image's own.
+MIWP_APK="$GUEST_PRODUCT/app/MiWallpaper/MiWallpaper.apk"
+if [ -f "$STAGE/MiWallpaper_patched.apk" ] && [ -f "$MIWP_APK" ] && [ "${ONEOS_GUEST_MIWALLPAPER_FIX:-1}" = 1 ]; then
+    chmod 644 "$STAGE/MiWallpaper_patched.apk"
+    $BB umount -l "$MIWP_APK" 2>/dev/null || true
+    $BB mount --bind "$STAGE/MiWallpaper_patched.apk" "$MIWP_APK" &&
+        $BB mount -o remount,bind,ro "$STAGE/MiWallpaper_patched.apk" "$MIWP_APK" 2>/dev/null
+    if [ "$(stat -c %d:%i "$MIWP_APK" 2>/dev/null)" = "$(stat -c %d:%i "$STAGE/MiWallpaper_patched.apk")" ]; then
+        echo "Bound MiWallpaper_patched.apk -> $MIWP_APK"
+    else
+        echo "!!! WARNING: MiWallpaper_patched.apk is not in place; the wallpaper app may not start on this phone"
+    fi
+fi
+
 # Signal bars: OplusSignalSmooth polls GET_SIGNAL_STRENGTH every 20 s with the
 # screen on (scripts/make-overlays.sh, patches/guest_signal_poll.py). Run 34:
 # Samsung's RIL sent the guest no signal strength indication after boot, so both
@@ -993,8 +1010,8 @@ fi
 #   panel (run 30, "too zoomed in"; not density or compat scaling: the app
 #   draws 2256x2504 at 408 dpi). This static RRO (make-overlays.sh) makes the
 #   grid 8x2. ONEOS_GUEST_WALLPAPER_GRID=0 keeps ColorOS's own layout.
-# - overlay/OneOSPixelStatusBar.apk, a guest with Pixel's SystemUIGoogle only
-#   (never ColorOS's SystemUI). Run 42: the battery sat 47-60 px further from
+# - overlay/OneOSPixelStatusBar.apk, a guest with Pixel's SystemUIGoogle or
+#   Infinity-X's AOSP SystemUI (never ColorOS's SystemUI). Run 42: the battery sat 47-60 px further from
 #   the right edge than the clock from the left, on both panels; the corner
 #   padding Pixel's own vendor overlay gives is 0dp on Samsung's vendor, the
 #   privacy dot padding 20dp. This static RRO (make-overlays.sh,
@@ -1019,7 +1036,11 @@ if [ "$FORM" = fold ] && [ "${ONEOS_GUEST_WALLPAPER_GRID:-1}" = 1 ] && [ -f "$ST
         chmod 755 "$STAGE/oem" "$STAGE/oem/overlay" && chmod 644 "$STAGE/oem/overlay/OneOSWallpapersFoldGrid.apk" &&
         OEM_FILES="$OEM_FILES overlay/OneOSWallpapersFoldGrid.apk"
 fi
-if [ -f "$GUEST_SYSTEM_EXT/priv-app/SystemUIGoogle/SystemUIGoogle.apk" ] && [ -f "$STAGE/OneOSPixelStatusBar.apk" ]; then
+# Infinity-X's AOSP SystemUI takes it too (0.4.33); never ColorOS's (it has
+# oplus-telephony-common.jar, and make-overlays.sh builds the RRO for its sets
+# only from SystemUIGoogle or an AOSP SystemUI).
+if [ -f "$STAGE/OneOSPixelStatusBar.apk" ] && { [ -f "$GUEST_SYSTEM_EXT/priv-app/SystemUIGoogle/SystemUIGoogle.apk" ] ||
+     { [ -f "$GUEST_SYSTEM_EXT/priv-app/SystemUI/SystemUI.apk" ] && [ ! -f "$GUEST_SYSTEM_EXT/framework/oplus-telephony-common.jar" ]; }; }; then
     if [ "${ONEOS_GUEST_STATUSBAR_PADDING:-1}" = 1 ]; then
         mkdir -p "$STAGE/oem/overlay" &&
             cp "$STAGE/OneOSPixelStatusBar.apk" "$STAGE/oem/overlay/" &&
@@ -2963,6 +2984,22 @@ if [ "${ONEOS_GUEST_ESIM_MANAGER:-0}" != 1 ]; then
         case ${d##*/} in *Overlay|*Permissions) continue ;; esac
         $BB mount -t tmpfs -o ro,size=4k,mode=755 tmpfs "$d" && \
             echo "Hid guest ${d#"$ROOTFS"/} (eSIM manager: the eSIM chip is One UI's; ONEOS_GUEST_ESIM_MANAGER=1 keeps it)"
+    done
+fi
+# OPPO's camera in an image that also has LineageOS's Aperture (Infinity-X 4.1
+# for the Find X9 Ultra): OplusCamera takes its camera list from the Find X9
+# Ultra's own odm/etc/camera/config/oplus_camera_config, which a Samsung phone
+# does not have ("configMap: {}"), and dies opening at CameraManager.c1 with a
+# NullPointerException, every time, on every phone (0.4.32 reports: S24 Ultra,
+# S25 Ultra, A56, A57, Z Flip5). The camera itself works: Open Camera and Lens
+# opened it in the same sessions. Aperture uses the plain camera2 API, so with
+# OplusCamera hidden it is the camera app. ColorOS keeps OplusCamera (no
+# Aperture there). ONEOS_GUEST_OEM_CAMERA=1 keeps it.
+if [ "${ONEOS_GUEST_OEM_CAMERA:-0}" != 1 ] && { [ -d "$GUEST_PRODUCT/app/Aperture" ] || [ -d "$GUEST_SYSTEM_EXT/app/Aperture" ]; }; then
+    for d in "$GUEST_SYSTEM_EXT"/priv-app/OplusCamera "$ROOTFS"/system/priv-app/OplusCamera "$GUEST_PRODUCT"/priv-app/OplusCamera; do
+        [ -d "$d" ] && [ ! -L "$d" ] || continue
+        $BB mount -t tmpfs -o ro,size=4k,mode=755 tmpfs "$d" && \
+            echo "Hid guest ${d#"$ROOTFS"/} (OPPO's camera needs the Find X9 Ultra's camera config; Aperture is the camera; ONEOS_GUEST_OEM_CAMERA=1 keeps it)"
     done
 fi
 # Google Play services (GMS_WANT, top; docs/pixel-guest.md). GmsCore is

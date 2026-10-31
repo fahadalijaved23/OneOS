@@ -274,7 +274,8 @@ add)
     # aborts the whole Bluetooth process. On such a phone the LE Audio
     # profiles are off for the session (memory only, One UI's values go back
     # with remove), so classic Bluetooth starts. ONEOS_GUEST_LE_AUDIO=1 keeps
-    # them.
+    # them. Classic (A2DP) audio then goes through oneos_btaudio, which
+    # oneos_switch.sh starts after this check (0.4.33); LE Audio stays off.
     # Only `service check` (a servicemanager lookup): `service list` asks every
     # service for its interface, and One UI's surfaceflinger is frozen behind
     # the gap splash here, so it never answered and the switch hung before the

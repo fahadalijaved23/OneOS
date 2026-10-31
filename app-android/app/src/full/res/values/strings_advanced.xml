@@ -256,7 +256,7 @@
     <string name="advanced_sec_ims_title">Use One UI\'s calling service (VoLTE)</string>
     <string name="advanced_sec_ims_summary">Experimental. Takes this phone\'s own Samsung calling service (IMS) into the other system so calls can use VoLTE instead of 3G. Nothing is sent to anyone; One UI\'s files are only read. May not work yet.</string>
     <string name="advanced_edm_stub_title">Camera without the Knox wait</string>
-    <string name="advanced_edm_stub_summary">Experimental. One UI\'s camera service asks Knox on every camera open and waits 5 seconds for a service the other system does not have, so the camera app gives up first. This answers for it. If the camera stops working with this on, turn it back off.</string>
+    <string name="advanced_edm_stub_summary">On by default. One UI\'s camera service asks Knox on every camera open and waits 5 seconds for a service the other system does not have, so most camera apps give up first. This answers for it. If the camera stops working with this on, turn it off.</string>
     <string name="advanced_card_risky">Risky</string>
     <string name="advanced_card_risky_tag">Can erase the phone</string>
     <string name="advanced_allow_lock_title">Switch with a screen lock set</string>

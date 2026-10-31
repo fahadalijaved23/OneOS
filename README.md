@@ -38,8 +38,8 @@ WeWaffles, and builds its guest images with
 
 ## Status
 
-App version 0.4.31. Samsung flagships with Snapdragon, plus the first four
-Exynos phones; root is required (tested with KernelSU; Magisk and APatch are
+App version 0.4.33. Samsung flagships with Snapdragon, plus the first four
+Exynos phones and (0.4.33) the first MediaTek phone; root is required (tested with KernelSU; Magisk and APatch are
 detected but untested).
 
 Where each system has actually started, on our phones and on testers' (One UI
@@ -87,6 +87,19 @@ images. The
 S26+ and Z Flip7 test sessions fixed the first Exynos problems (the phone
 restarting after the switch); every system on Exynos is still untested. Each
 of them also offers Infinity-X.
+
+New in 0.4.33, untested: the Galaxy Z Fold6 (SM-F956, q6q, the S24 Ultra's
+Snapdragon 8 Gen 3) with the Find N6 build and Infinity-X, and the Galaxy A07
+(SM-A075, MediaTek MT6789, One UI 9), the first MediaTek phone, with Infinity-X
+only. The Galaxy A16 and A17 on One UI 8.5 (Android 16) are not supported yet:
+every system here is Android 17.
+
+Also in 0.4.33: Bluetooth audio on the phones whose One UI has only Samsung's
+Bluetooth audio HAL (S25, S24, S23, Z Fold7, Z Flip7 and Flip5, A57, A56;
+untested there), through a small bridge to Samsung's HAL; Chrome loads pages
+again in every system (it is told to use its Java renderers); the camera opens
+without Knox's 5 s wait by default; on bar phones the Pixel and Infinity-X
+status bar takes One UI's height and corner size.
 
 Pixel 11 Fold on the Galaxy Z Fold8 Ultra: calls and SMS on both SIMs, 5G and
 Wi-Fi, Bluetooth audio, Google Play and Google's apps, the inner and cover
@@ -147,10 +160,10 @@ release).
 5. Install the OneOS app made for your phone's series and allow it in your
    root manager. From 0.4.25 there are three downloads, each about half the
    size of the old single app:
-   `OneOS-<version>-fold.apk` (Galaxy Z Fold8 Ultra, Z Fold8, Z Fold7),
+   `OneOS-<version>-fold.apk` (Galaxy Z Fold8 Ultra, Z Fold8, Z Fold7, Z Fold6),
    `OneOS-<version>-s26.apk` (Galaxy S26 Ultra, S26+, S26) and
    `OneOS-<version>-s25.apk` (Galaxy S25 Ultra, S25+, S25, S24 Ultra, S23,
-   S23+, Z Flip7, Z Flip5, A57, A56). Installed the wrong one? OneOS tells you which file your
+   S23+, Z Flip7, Z Flip5, A57, A56, A07). Installed the wrong one? OneOS tells you which file your
    phone needs.
 6. In OneOS open **Systems**, tap **Download** on the system made for your
    phone and download it, on Wi-Fi (3.3 to 5.3 GB).

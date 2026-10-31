@@ -268,6 +268,29 @@ if [ -n "$zs_left" ]; then
     ONEOS_RETURN_MODE=reboot
 fi
 
+# The Bluetooth audio bridge (oneos_switch.sh, Samsung-only HAL phones): stop
+# it and take Android's factory out of the device manifest again before One
+# UI's framework starts. One UI's Bluetooth asks for Android's factory first
+# when it is declared and would wait for it. The touch makes servicemanager
+# read the manifests again. A declaration that stays means a reboot return.
+pkill -9 -f "$S/oneos_btaudio" 2>/dev/null || true
+BT_FRAG=$(cat $S/bt_bridge_vintf 2>/dev/null)
+if [ -n "$BT_FRAG" ]; then
+    n=0
+    while [ $n -lt 5 ] && awk -v m="$BT_FRAG" '$5 == m { f = 1 } END { exit !f }' /proc/1/mountinfo 2>/dev/null; do
+        if [ -n "$BB" ]; then in_init_ns "$BB" umount -l "$BT_FRAG" 2>/dev/null; else in_init_ns umount -D -l "$BT_FRAG" 2>/dev/null; fi
+        n=$((n + 1))
+    done
+    in_init_ns touch /apex/apex-info-list.xml
+    if awk -v m="$BT_FRAG" '$5 == m { f = 1 } END { exit !f }' /proc/1/mountinfo 2>/dev/null; then
+        echo "!!! Bluetooth audio bridge: $BT_FRAG still bound (One UI's Bluetooth would wait for Android's factory); rebooting"
+        ONEOS_RETURN_MODE=reboot
+    else
+        rm -f $S/bt_bridge_vintf $S/oneos_bt_vintf.xml
+        echo "Bluetooth audio bridge: stopped, $BT_FRAG is the vendor's again ($([ -x $S/oneos_btaudio ] && $S/oneos_btaudio --check 2>&1))"
+    fi
+fi
+
 # Put the host's own /data trees back FIRST: guest_prepare.sh bridges the
 # staged app trees (installd/artd write there), and nothing may start One UI
 # on top of the guest's copies.
@@ -756,6 +779,19 @@ say "Gate B: no guest process, One UI's services up, SELinux $(getenforce)"
 # (the guest's system_server took its one-time unstable interface) and its
 # own onrestart starts zygote; ctl.start covers a netd without one.
 timeout 10 vdc volume abort_fuse >/dev/null 2>&1
+# One UI's zygote_next (native-only processes, app zygotes) ran through the
+# whole session: the switch leaves it alone and the guest may have used it. A
+# boot gives One UI a fresh one; so does this, before One UI's zygote is back.
+# After in-place returns the owner saw apps hang on their splash screens,
+# Chrome stop loading and later soft reboots until a full reboot (owner,
+# 31 Oct), the symptoms of process starts waiting on a zygote that does not
+# answer. Its children are logged first.
+zn=$(pidof zygote_next 2>/dev/null)
+if [ -n "$zn" ] && [ "$(base_prop init.svc.zygote_next)" = running ]; then
+    kids=$(ps -A -o PPID,PID,NAME 2>/dev/null | "$BB" awk -v p="$zn" 'NR > 1 && $1 == p {printf "%s:%s ", $2, $3}')
+    say "One UI's zygote_next $zn at the return, children: ${kids:-none}; restarting it"
+    setprop ctl.restart zygote_next
+fi
 setprop ctl.restart netd
 n=0
 while [ $n -lt 20 ] && [ "$(getprop init.svc.zygote)" != running ]; do sleep 0.5; n=$((n + 1)); done
@@ -807,7 +843,8 @@ ip rule show 2>/dev/null | "$BB" diff "$BASE/iprule" - >> "$IPLOG" 2>&1 || say "
 v=$("$BB" sed -n 's/^persist\.sys\.disable_rescue=//p' $S/persist_props.snapshot 2>/dev/null | "$BB" head -n 1)
 if [ -n "$v" ]; then "$RP" -n persist.sys.disable_rescue "$v" 2>/dev/null; else "$RP" --delete persist.sys.disable_rescue 2>/dev/null; fi
 /system/bin/sh $S/check_host_apex.sh after-inplace >> "$IPLOG" 2>&1 || say "!!! a One UI APEX file read failed after the restart (see return_inplace.log)"
-# Two more minutes of the session's logcat capture for anything late, then
+# Ten more minutes of the session's logcat capture for anything late (two
+# until 0.4.33: the apps hanging after a return came later), then
 # this return stops it, unless a session started meanwhile: that one keeps the
 # capture as its own (oneos_switch.sh) and deletes $LOGS/logcat.stop, and the
 # stop below then leaves it running. S25 Ultra, 28 Oct: the next session
@@ -816,7 +853,7 @@ if [ -n "$v" ]; then "$RP" -n persist.sys.disable_rescue "$v" 2>/dev/null; else 
 if [ -d "$LOGS" ] && [ ! -L "$LOGS" ]; then
     STOP_TOKEN="$(date +%s).$$"
     echo "$STOP_TOKEN" > "$LOGS/logcat.stop" 2>/dev/null
-    "$BB" sh -c "sleep 120; [ \"\$(cat $LOGS/logcat.stop 2>/dev/null)\" = $STOP_TOKEN ] || exit 0; rm -f $LOGS/logcat.stop; pkill -f '^logcat .*/data/local/tmp/oneos_logs/boot.log'" </dev/null >/dev/null 2>&1 &
+    "$BB" sh -c "sleep 600; [ \"\$(cat $LOGS/logcat.stop 2>/dev/null)\" = $STOP_TOKEN ] || exit 0; rm -f $LOGS/logcat.stop; pkill -f '^logcat .*/data/local/tmp/oneos_logs/boot.log'" </dev/null >/dev/null 2>&1 &
 fi
 "$BB" rm -rf $NODES
 echo "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null) $(date +%s)" > $S/return_inplace.done

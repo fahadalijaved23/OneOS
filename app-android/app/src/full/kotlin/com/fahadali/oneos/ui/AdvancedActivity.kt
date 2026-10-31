@@ -107,7 +107,7 @@ class AdvancedFragment : CardsFragment() {
         }
         // Camera (0.4.32): One UI's camera service asks Knox on every open and waits
         // 5 s for a service the other system does not have, so the camera app gives
-        // up first. Experimental, off by default.
+        // up first. On by default since 0.4.33 (every 0.4.32 camera report waited).
         CardRows.toggle(calls, getString(R.string.advanced_edm_stub_title), getString(R.string.advanced_edm_stub_summary), SessionPrefs.edmStub(ctx)) { on ->
             SessionPrefs.setEdmStub(ctx, on)
         }

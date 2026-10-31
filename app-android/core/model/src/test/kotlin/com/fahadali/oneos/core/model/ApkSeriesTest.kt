@@ -65,7 +65,7 @@ class ApkSeriesTest {
         val wrong = gate(ApkSeries.S25)
         assertEquals(Level.BLOCK, wrong.level)
         assertEquals(SwitchGates.R_IMAGE_OTHER_SERIES, wrong.reason)
-        assertEquals("This OneOS is for the Galaxy S25, S24, S23, Z Flip7, Z Flip5, A57 and A56", wrong.title)
+        assertEquals("This OneOS is for the Galaxy S25, S24, S23, Z Flip7, Z Flip5, A57, A56 and A07", wrong.title)
         assertTrue(wrong.detail, wrong.detail.contains("needs OneOS for the Galaxy Z Fold (the file ending in -fold.apk)"))
         // Its own series and the all-in-one build do not stop it.
         assertFalse(gate(ApkSeries.FOLD).reason == SwitchGates.R_IMAGE_OTHER_SERIES)

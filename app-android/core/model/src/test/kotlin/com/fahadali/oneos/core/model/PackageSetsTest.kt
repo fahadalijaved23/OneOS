@@ -47,8 +47,10 @@ class PackageSetsTest {
         // Not its cellbroadcast module (0.4.28): One UI's stays, as tethering does.
         val ifx = PackageSets.INFINITYX
         assertEquals(Images.ID_INFINITYX, ifx.imageId)
-        assertEquals("out/overlays_infinityx", ifx.sourceDir)
-        assertEquals(33, ifx.files.size)
+        assertEquals("out/overlays_infinityx_r2", ifx.sourceDir)
+        assertEquals(34, ifx.files.size)
+        // 0.4.33: the status bar's corner padding, as on the Pixel images.
+        assertTrue(ifx.file("OneOSPixelStatusBar.apk")?.role == FileRole.RRO)
         assertEquals(21, ifx.files.count { it.role == FileRole.APEX_PAYLOAD })
         assertEquals(listOf(PackageSets.TETHERING, PackageSets.CELLBROADCAST), ifx.omitted)
         assertTrue(ifx.file(PackageSets.CELLBROADCAST) == null)
@@ -62,9 +64,10 @@ class PackageSetsTest {
         // framework.jar and the guest vold (r7), the native camera client (r10), the 15 common payloads and bt.
         val hyper = PackageSets.HYPER_F8U
         assertEquals(Images.ID_HYPEROS_LHASA, hyper.imageId)
-        assertEquals("out/overlays_hyperos_r10", hyper.sourceDir)
-        assertEquals(33, hyper.files.size)
-        assertEquals(listOf("socket_exec", "libaudiohal_aidl_patched.so"), hyper.files.filter { it.role == FileRole.GUEST_FIX }.map { it.name })
+        assertEquals("out/overlays_hyperos_r11", hyper.sourceDir)
+        assertEquals(34, hyper.files.size)
+        assertEquals(listOf("socket_exec", "libaudiohal_aidl_patched.so", "MiWallpaper_patched.apk"),
+            hyper.files.filter { it.role == FileRole.GUEST_FIX }.map { it.name })
         assertEquals(
             listOf("services_patched.jar", "miui-services_patched.jar", "apprecovery.proinstaller_patched.jar", "framework_patched.jar",
                 "miui-wifi-service_patched.jar", "miui-telephony-common_patched.jar", "vold_patched", "service.incremental_patched.so",

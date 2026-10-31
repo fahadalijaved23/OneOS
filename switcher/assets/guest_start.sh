@@ -253,8 +253,11 @@ echo "[Pivoted Root] Host surfaceflinger after composer restart: $(pidof surface
 # Reads files, and one lshal bounded by timeout, on a composer that has just
 # registered: no plain dumpsys and no service walk here, the host's
 # system_server is frozen at this point (0.4.11 hung every switch that way).
-CD=$STAGE/diag_composer
-mkdir -p "$CD"
+# $STAGE is the host side's name for the stage; this script runs inside the
+# pivoted root, where the stage's own /data IS /data. Write it where the log
+# collector already looks: collect.list takes "$S"/data/*.log for every guest
+# log (takeover.log and the rest), so one .log there needs no collector change.
+CD=/data/oneos_composer_before_sf.log
 {
     echo "== composer service ${COMPOSER_SVC:-none found}"
     [ -z "$COMPOSER_SVC" ] || echo "init.svc.$COMPOSER_SVC: $(getprop "init.svc.$COMPOSER_SVC")"
@@ -269,12 +272,19 @@ mkdir -p "$CD"
     echo
     echo "== vendor display configs (the file name is the display id it is for)"
     ls -l /vendor/etc/displayconfig /odm/etc/displayconfig 2>&1
-} > "$CD/composer_before_sf.txt" 2>&1
-# The composer's own dump: SDM lists its displays and each one's configs.
-if command -v lshal >/dev/null 2>&1; then
-    timeout 5 lshal debug android.hardware.graphics.composer3.IComposer/default \
-        > "$CD/composer_debug.txt" 2>&1 || echo "lshal debug: no answer in 5 s" >> "$CD/composer_debug.txt"
-fi
+    echo
+    echo "== the composer's own dump"
+    # An AIDL composer (every phone OneOS knows) answers dumpsys, not lshal
+    # debug (HIDL only); one named service, bounded.
+    timeout 5 dumpsys android.hardware.graphics.composer3.IComposer/default 2>&1 | head -n 400 ||
+        echo "dumpsys of the composer: no answer in 5 s"
+    if command -v lshal >/dev/null 2>&1; then
+        timeout 5 lshal debug android.hardware.graphics.composer3.IComposer/default 2>&1 ||
+            echo "lshal debug: no answer in 5 s"
+    else
+        echo "no lshal in this image"
+    fi
+} > "$CD" 2>&1
 
 # Shader caches. init.rc makes /data/misc/surfaceflinger (0700 system system)
 # and sets service.sf.cache_dir_available; the container has no init, so the

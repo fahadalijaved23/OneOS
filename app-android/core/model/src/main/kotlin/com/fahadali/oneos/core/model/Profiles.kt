@@ -96,6 +96,8 @@ object Profiles {
     const val ID_A56 = "a56"
     const val ID_A57 = "a57"
     const val ID_FLIP5 = "flip5"
+    const val ID_FOLD6 = "f6"
+    const val ID_A07 = "a07"
 
     /** The SM8750 and SM8650 phones' note ([PhoneProfile.notes]) and its [Finding.reason]. */
     const val ID_NOTE_OLDER_VENDOR = "profile-vendor-older"
@@ -203,6 +205,25 @@ object Profiles {
         "Exynos phones have had only a few test sessions so far. The screen, phone calls, Wi-Fi or sound may not work; " +
             "if the screen stays black, OneOS returns to One UI by itself. Share the session logs afterwards.",
         R_EXYNOS,
+    )
+
+    /** The MediaTek phones' note: the first sessions on that chip (0.4.33, the Galaxy A07). */
+    const val ID_NOTE_MEDIATEK = "profile-mediatek"
+    const val R_MEDIATEK = "mediatek"
+
+    /**
+     * 0.4.33: the first MediaTek phone. The guest system takes One UI's vendor
+     * through Android's standard interfaces, as on Snapdragon and Exynos, and
+     * the session scripts find the display composer by its init service name
+     * (vendor.hwcomposer-3-1 on the A07). Unlike every phone before it there is
+     * no /sys/class/backlight panel node, so the brightness slider may do
+     * nothing until a session shows how its backlight is driven.
+     */
+    private val MEDIATEK = Finding(
+        ID_NOTE_MEDIATEK, Level.WARN, "First runs on MediaTek",
+        "MediaTek phones have not run OneOS before. The screen, brightness, phone calls, Wi-Fi or sound may not work; " +
+            "if the screen stays black, OneOS returns to One UI by itself. Share the session logs afterwards.",
+        R_MEDIATEK,
     )
 
     /** The Switch tick for [ID_NOTE_EXPECT_NO_START]. */
@@ -542,10 +563,53 @@ object Profiles {
         notes = listOf(EXPECT_NO_START),
     )
 
+    /**
+     * Galaxy Z Fold6, from 0.4.33: a probe report of 2026-10-30 (SM-F956B, q6q,
+     * SM8650 like the Galaxy S24 Ultra, One UI 9.0, Android 17 build
+     * CP2A.260605.016, vendor API 34 and kernel 6.1, density 420, installd table
+     * identical to host_installd.txt; the tester asked for a build). A fold like
+     * the Z Fold7: the Find N6 build (its fold layout) and Infinity-X, untested.
+     * Not HyperOS: on the S24 Ultra, the same chip, its SurfaceFlinger aborts at
+     * the first display (0.4.32, four sessions), so it would only show black.
+     */
+    val FOLD6 = PhoneProfile(
+        id = ID_FOLD6,
+        label = "Galaxy Z Fold6",
+        modelPrefix = "SM-F956",
+        codename = "q6q",
+        socModel = "SM8650",
+        form = FormFactor.FOLD,
+        choices = listOf(ImageChoice(Images.ID_FIND_N6, PackageSets.ID_N6_F8U, tested = false), INFINITYX_CHOICE),
+        notes = listOf(olderVendor("34 (Android 14)", "6.1")),
+    )
+
+    /**
+     * Galaxy A07, from 0.4.33: a probe report of 2026-10-30 (SM-A075F, a07,
+     * MediaTek MT6789, One UI 9.0, Android 17 build CP2A.260605.016, vendor API
+     * 31 and kernel 6.12, one 720 x 1600 panel at density 300 (60/90 Hz), touch
+     * chipone-tddi, composer3 and audio.core AIDL HALs, Cortex-A55/A76 with no
+     * SVE or SME, installd table of 85 methods like every One UI 9 phone). The
+     * owner asked for the A series on Infinity-X; this one is on Android 17
+     * already, so the version gate allows it. Infinity-X only (its system code
+     * needs neither SVE nor SME: the S25 Ultra runs it), untested, with
+     * [MEDIATEK]. The A16 and A17 on One UI 8.5 (Android 16) are still refused
+     * by the version gate.
+     */
+    val A07 = PhoneProfile(
+        id = ID_A07,
+        label = "Galaxy A07",
+        modelPrefix = "SM-A075",
+        codename = "a07",
+        socModel = "MT6789",
+        form = FormFactor.BAR,
+        choices = listOf(INFINITYX_CHOICE),
+        notes = listOf(MEDIATEK, olderVendor("31 (Android 12)", "6.12")),
+    )
+
     val BUILT_IN: List<PhoneProfile> = listOf(
         F8U, S_ULTRA_8850, S_ULTRA_8750, S_8750, FOLD7, S_PLUS_8750, FOLD8,
         S_8850, S_8850_JP, S_ULTRA_8650, S_8550, S_PLUS_8550, S_PLUS_8850,
-        S_PLUS_9965, FLIP7, A56, A57, FLIP5,
+        S_PLUS_9965, FLIP7, A56, A57, FLIP5, FOLD6, A07,
     )
 
     /** `ro.build.version.oneui` values seen on profiled phones (all One UI 9.0). */
