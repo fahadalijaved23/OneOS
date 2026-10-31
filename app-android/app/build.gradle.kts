@@ -283,8 +283,11 @@ android {
         // Ultra's camera config) and its status bar keeps off the corners, HyperOS's
         // wallpaper app starts on one-panel phones, the composer capture is written
         // where the logs are collected, and two new phones: Z Fold6, A07.
-        versionCode = 50
-        versionName = "0.4.33"
+        // 0.4.34: Infinity-X sound on the S25 series, the Bluetooth audio bridge
+        // actually starting, the camera worker stand-in, One UI's brightness curve
+        // on every phone (Pixel, HyperOS), HyperOS data apps' libraries.
+        versionCode = 51
+        versionName = "0.4.34"
         // Send to the OneOS team (0.4.29, both editions): the report service's
         // address and its upload-only key, from the team's server (reports/deploy.sh
         // writes them). A build without them shows no Send; Share and Save stay.

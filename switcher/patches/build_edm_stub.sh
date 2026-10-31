@@ -1,5 +1,7 @@
 #!/bin/sh
-# Build switcher/assets/OneOSEdmStub.dex from OneOSEdmStub.java.
+# Build switcher/assets/OneOSEdmStub.dex from OneOSEdmStub.java and
+# OneOSCameraWorker.java (0.4.34: the stand-ins for the One UI services the
+# shared cameraserver asks on every camera open).
 #
 #   switcher/patches/build_edm_stub.sh
 #
@@ -25,7 +27,7 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT INT TERM
 mkdir -p "$WORK/classes"
 
-javac -nowarn --release 17 -classpath "$AJ" -d "$WORK/classes" "$HERE/OneOSEdmStub.java"
+javac -nowarn --release 17 -classpath "$AJ" -d "$WORK/classes" "$HERE/OneOSEdmStub.java" "$HERE/OneOSCameraWorker.java"
 "$D8" --release --min-api 31 --lib "$AJ" --output "$WORK" "$WORK"/classes/*.class
 mv "$WORK/classes.dex" "$ROOT/switcher/assets/OneOSEdmStub.dex"
 

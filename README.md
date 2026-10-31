@@ -38,7 +38,7 @@ WeWaffles, and builds its guest images with
 
 ## Status
 
-App version 0.4.33. Samsung flagships with Snapdragon, plus the first four
+App version 0.4.34. Samsung flagships with Snapdragon, plus the first four
 Exynos phones and (0.4.33) the first MediaTek phone; root is required (tested with KernelSU; Magisk and APatch are
 detected but untested).
 
@@ -93,6 +93,14 @@ Snapdragon 8 Gen 3) with the Find N6 build and Infinity-X, and the Galaxy A07
 (SM-A075, MediaTek MT6789, One UI 9), the first MediaTek phone, with Infinity-X
 only. The Galaxy A16 and A17 on One UI 8.5 (Android 16) are not supported yet:
 every system here is Android 17.
+
+New in 0.4.34: sound and the microphone in Infinity-X on the S25 series (its
+audio service waited for a One UI extension that is not there during a
+session); the Bluetooth audio bridge starts on the phones that need it (0.4.33
+checked too early and skipped it); the camera opens without a 5 s wait and a
+refusal on the S25 Ultra's firmware; One UI's brightness curve for every
+phone's own screen in Pixel and HyperOS; HyperOS's preinstalled apps
+(Downloads, Weather, Game Center, WPS) find their libraries.
 
 Also in 0.4.33: Bluetooth audio on the phones whose One UI has only Samsung's
 Bluetooth audio HAL (S25, S24, S23, Z Fold7, Z Flip7 and Flip5, A57, A56;

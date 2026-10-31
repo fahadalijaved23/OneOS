@@ -369,6 +369,12 @@ rm -f "$STAGE/host_screenhole"
 # aborts at the first display connect on the S24 Ultra, S23 and Z Flip5 ("No
 # matching frame rate modes" with an unrestricted policy) before it logs any.
 timeout 10 dumpsys SurfaceFlinger --display-id > "$STAGE/display_modes_host.log" 2>&1
+# Each mode as SurfaceFlinger made it: hwc id, vsync, dpi, group and the VRR
+# config (minFrameIntervalNs) the composer reports, and the peak rate taken
+# from it. The S24 Ultra's 0.4.33 sessions showed One UI's 21 modes and the
+# composer answering, yet HyperOS's SurfaceFlinger found no mode in an
+# unrestricted policy; what it takes the peak rate from is the open question.
+timeout 15 dumpsys SurfaceFlinger 2>/dev/null | grep -E 'activeMode=|[{]id=[0-9]+, hwcId=|peakRefreshRate=' | head -n 120 | cut -c1-400 >> "$STAGE/display_modes_host.log"
 timeout 10 dumpsys display 2>/dev/null | grep -E 'mSupportedModes|mActiveModeId|mDefaultModeId|DisplayModeRecord|mUserPreferredModeId|mDisplayModeSpecs|DisplayDeviceInfo\{' |
     cut -c1-3000 >> "$STAGE/display_modes_host.log"
 for p in /sys/class/lcd/panel /sys/class/lcd/panel1; do
@@ -1105,6 +1111,27 @@ if [ "${ONEOS_GUEST_AUDIO:-1}" = "1" ]; then
     sleep 1
     for s in $AHAL; do setprop ctl.start $s; done
     echo "Host audioserver: $(getprop init.svc.audioserver); audio HAL services restarted: ${AHAL:-none found}"
+    # The audio HAL adapter's vendor extension. The S25 series' One UI sets
+    # ro.audio.ihaladaptervendorextension_enabled=true, and with One UI's
+    # audioserver stopped nothing serves
+    # android.media.audio.IHalAdapterVendorExtension/default: a guest whose image
+    # has no value of its own (Infinity-X) took One UI's, and its audioserver
+    # waited for the extension for good, so no sound and no microphone at all
+    # (0.4.32 and 0.4.33 reports 3e9af08a, 72062bdf, f0fffbb5: "Waited one second"
+    # 60 times, media.audio_flinger never registered). guest_props.sh already
+    # gives an image's own value; when the key is still true and the
+    # extension is not there a few seconds after the HAL restart, false for
+    # the session (put back on the return with the other overrides).
+    AVX=ro.audio.ihaladaptervendorextension_enabled
+    if [ "$(getprop $AVX)" = true ] && [ -n "$RP" ]; then
+        n=0
+        while [ $n -lt 10 ] && ! timeout 5 service check android.media.audio.IHalAdapterVendorExtension/default 2>/dev/null | grep -q ": found"; do n=$((n + 1)); sleep 0.5; done
+        if ! timeout 5 service check android.media.audio.IHalAdapterVendorExtension/default 2>/dev/null | grep -q ": found"; then
+            grep -q "^$AVX=" "$STAGE/guest_props.overridden" 2>/dev/null || echo "$AVX=true" >> "$STAGE/guest_props.overridden"
+            "$RP" -n "$AVX" false 2>/dev/null &&
+                echo "Audio: $AVX=false for the session (no IHalAdapterVendorExtension with One UI's audioserver stopped)"
+        fi
+    fi
 else
     rm -f "$STAGE/data/guest_audio.flag" "$STAGE/host_audio_hal_svcs"
     setprop ctl.start audioserver
@@ -1137,37 +1164,55 @@ fi
 rm -f "$STAGE/bt_bridge_vintf"
 BTA_AOSP=android.hardware.bluetooth.audio.IBluetoothAudioProviderFactory/default
 BTA_SEH=vendor.samsung.hardware.bluetooth.audio.ISehBluetoothAudioProviderFactory/default
-if [ "${ONEOS_GUEST_BT_AUDIO_BRIDGE:-1}" = 1 ] && [ -f "$STAGE/oneos_btaudio" ] && [ ! -L "$STAGE/oneos_btaudio" ] &&
-    timeout 5 service check "$BTA_SEH" 2>/dev/null | grep -q ": found" &&
-    timeout 5 service check "$BTA_AOSP" 2>/dev/null | grep -q ": not found"; then
-    chmod 755 "$STAGE/oneos_btaudio"
-    BT_FRAG=$(grep -l -s "vendor.samsung.hardware.bluetooth.audio" /vendor/etc/vintf/manifest/*.xml | head -n 1)
-    [ -n "$BT_FRAG" ] || BT_FRAG=$(grep -l -s "vendor.samsung.hardware.bluetooth.audio" /vendor/etc/vintf/manifest.xml)
-    BT_COPY="$STAGE/oneos_bt_vintf.xml"
-    if [ -z "$BT_FRAG" ]; then
-        echo "Bluetooth audio bridge: no vendor manifest declares Samsung's HAL; not started"
-    elif [ "$(grep -c '</manifest>' "$BT_FRAG")" != 1 ]; then
-        echo "Bluetooth audio bridge: $BT_FRAG is not one manifest; not started"
+# The audio HAL that serves Samsung's factory was restarted just above and
+# registers it again only after a few seconds: 0.4.33's first S25 Ultra
+# sessions checked at once, found nothing and skipped the bridge without a word
+# (f0fffbb5, 04857daa). So the vendor manifest decides whether this is such a
+# phone, servicemanager whether Android's factory is declared (the
+# SM8850 phones declare it themselves), and the start waits for Samsung's.
+BT_WHY=""
+BT_FRAG=$(grep -l -s "vendor.samsung.hardware.bluetooth.audio" /vendor/etc/vintf/manifest/*.xml | head -n 1)
+[ -n "$BT_FRAG" ] || BT_FRAG=$(grep -l -s "vendor.samsung.hardware.bluetooth.audio" /vendor/etc/vintf/manifest.xml)
+if [ "${ONEOS_GUEST_BT_AUDIO_BRIDGE:-1}" != 1 ]; then
+    BT_WHY="off (ONEOS_GUEST_BT_AUDIO_BRIDGE=$ONEOS_GUEST_BT_AUDIO_BRIDGE)"
+elif [ ! -f "$STAGE/oneos_btaudio" ] || [ -L "$STAGE/oneos_btaudio" ]; then
+    BT_WHY="no oneos_btaudio in the stage"
+elif [ -z "$BT_FRAG" ]; then
+    BT_WHY="not needed (no vendor manifest declares Samsung's Bluetooth audio HAL)"
+elif chmod 755 "$STAGE/oneos_btaudio" && [ "$(timeout 5 "$STAGE/oneos_btaudio" --declared "$BTA_AOSP" 2>/dev/null)" = 1 ]; then
+    BT_WHY="not needed (the vendor declares Android's factory itself)"
+elif [ "$(grep -c '</manifest>' "$BT_FRAG")" != 1 ]; then
+    BT_WHY="$BT_FRAG is not one manifest; not started"
+else
+    n=0
+    while [ $n -lt 30 ] && ! timeout 5 service check "$BTA_SEH" 2>/dev/null | grep -q ": found"; do n=$((n + 1)); sleep 0.5; done
+    if ! timeout 5 service check "$BTA_SEH" 2>/dev/null | grep -q ": found"; then
+        BT_WHY="Samsung's factory was not registered 15 s after the audio HAL restart; not started"
+    fi
+fi
+BT_COPY="$STAGE/oneos_bt_vintf.xml"
+if [ -n "$BT_WHY" ]; then
+    echo "Bluetooth audio bridge: $BT_WHY"
+else
+    echo "Bluetooth audio bridge: Samsung's factory registered after $((n / 2)) s"
+    $BB awk '/<\/manifest>/ {
+        print "    <hal format=\"aidl\">"
+        print "        <name>android.hardware.bluetooth.audio</name>"
+        print "        <version>2</version>"
+        print "        <fqname>IBluetoothAudioProviderFactory/default</fqname>"
+        print "    </hal>"
+    } { print }' "$BT_FRAG" > "$BT_COPY"
+    chmod 644 "$BT_COPY"
+    chcon u:object_r:vendor_configs_file:s0 "$BT_COPY" 2>/dev/null
+    if grep -q "IBluetoothAudioProviderFactory/default" "$BT_COPY" && $BB mount -o bind,ro "$BT_COPY" "$BT_FRAG"; then
+        echo "$BT_FRAG" > "$STAGE/bt_bridge_vintf"
+        touch /apex/apex-info-list.xml
+        (umask 027; $BB nohup "$STAGE/oneos_btaudio" > "$STAGE/oneos_btaudio.log" 2>&1 </dev/null &)
+        n=0
+        while [ $n -lt 25 ] && ! timeout 5 service check "$BTA_AOSP" 2>/dev/null | grep -q ": found"; do n=$((n + 1)); sleep 0.2; done
+        echo "Bluetooth audio bridge: $(timeout 5 "$STAGE/oneos_btaudio" --check 2>&1) (manifest: $BT_FRAG; $(head -n 1 "$STAGE/oneos_btaudio.log" 2>/dev/null))"
     else
-        $BB awk '/<\/manifest>/ {
-            print "    <hal format=\"aidl\">"
-            print "        <name>android.hardware.bluetooth.audio</name>"
-            print "        <version>2</version>"
-            print "        <fqname>IBluetoothAudioProviderFactory/default</fqname>"
-            print "    </hal>"
-        } { print }' "$BT_FRAG" > "$BT_COPY"
-        chmod 644 "$BT_COPY"
-        chcon u:object_r:vendor_configs_file:s0 "$BT_COPY" 2>/dev/null
-        if grep -q "IBluetoothAudioProviderFactory/default" "$BT_COPY" && $BB mount -o bind,ro "$BT_COPY" "$BT_FRAG"; then
-            echo "$BT_FRAG" > "$STAGE/bt_bridge_vintf"
-            touch /apex/apex-info-list.xml
-            (umask 027; $BB nohup "$STAGE/oneos_btaudio" > "$STAGE/oneos_btaudio.log" 2>&1 </dev/null &)
-            n=0
-            while [ $n -lt 25 ] && ! timeout 5 service check "$BTA_AOSP" 2>/dev/null | grep -q ": found"; do n=$((n + 1)); sleep 0.2; done
-            echo "Bluetooth audio bridge: $(timeout 5 "$STAGE/oneos_btaudio" --check 2>&1) (manifest: $BT_FRAG; $(head -n 1 "$STAGE/oneos_btaudio.log" 2>/dev/null))"
-        else
-            echo "Bluetooth audio bridge: could not declare the factory over $BT_FRAG; not started"
-        fi
+        echo "Bluetooth audio bridge: could not declare the factory over $BT_FRAG; not started"
     fi
 fi
 
@@ -1252,6 +1297,12 @@ cp -f "$STAGE/guest_start.sh" "$STAGE/data/guest_start.sh"
 chmod 755 "$STAGE/data/guest_start.sh"
 cp -f "$STAGE/zygote_exec" "$STAGE/data/zygote_exec"
 chmod 755 "$STAGE/data/zygote_exec"
+# The camera worker stand-in the UI activator runs in the guest (0.4.34), in
+# the Knox stand-in's dex.
+rm -f "$STAGE/data/oneos_edm_stub.dex"
+if [ -f "$STAGE/OneOSEdmStub.dex" ] && [ ! -L "$STAGE/OneOSEdmStub.dex" ]; then
+    cp -f "$STAGE/OneOSEdmStub.dex" "$STAGE/data/oneos_edm_stub.dex" && chmod 644 "$STAGE/data/oneos_edm_stub.dex"
+fi
 # The dimension overlay helper the UI activator runs in the guest (0.4.33).
 rm -f "$STAGE/data/oneos_overlay_dimen.dex"
 if [ -f "$STAGE/OneOSOverlayDimen.dex" ] && [ ! -L "$STAGE/OneOSOverlayDimen.dex" ]; then
@@ -1487,6 +1538,17 @@ while true; do
                 (umask 027; CLASSPATH=$STAGE/OneOSEdmStub.dex $BB nohup $BB setuidgid system /system/bin/app_process /system/bin OneOSEdmStub \$PID > $STAGE/edm_stub.log 2>&1 </dev/null &)
                 sleep 2
                 echo \"[UI Activator] Knox edm stub: \$(head -n 1 $STAGE/edm_stub.log 2>/dev/null | tr -d '\n' || true); \$(timeout 10 service check edmnativehelper 2>&1 | tr -d '\n')\"
+                # The Samsung camera service worker (patches/OneOSCameraWorker.java, in
+                # the same dex), which the One UI cameraserver also asks on every open:
+                # on the S25 Ultra firmware each connect waited 5 s for it and then
+                # refused the guest app (has been restricted, report 04857daa).
+                # Inside the guest, which knows the packages of its own apps; only
+                # while nothing serves the name.
+                if ! timeout 10 service check media.camera.worker 2>/dev/null | grep -q ': found'; then
+                    ($BB nohup $BB nsenter -t \$PID -m /system/bin/sh /data/oneos_genv.sh /system/bin/env CLASSPATH=/data/oneos_edm_stub.dex /system/bin/app_process /system/bin OneOSCameraWorker \$PID > $STAGE/camera_worker.log 2>&1 </dev/null &)
+                    sleep 2
+                fi
+                echo \"[UI Activator] camera worker: \$(head -n 1 $STAGE/camera_worker.log 2>/dev/null | tr -d '\n' || true); \$(timeout 10 service check media.camera.worker 2>&1 | tr -d '\n')\"
             fi
             # Density and fold line of the inner panel (run 43), before HOME so the
             # setup wizard starts with them. With no init of its own the guest

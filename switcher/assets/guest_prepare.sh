@@ -624,9 +624,11 @@ fi
 # (com.samsung.sensor.physical_proximity, wake-up; system_server passes its
 # SSENSOR permission). DisplayDeviceConfig reads product/etc/displayconfig
 # before vendor; display_port_147.xml is the inner panel, 148 the cover.
-# The Z Fold8 Ultra (profile f8u) only: another phone's panels have their own
-# curve (the Z Fold8's are other panels on the same ports).
-# ColorOS has its own brightness path (samsung_backlight_curve.py).
+# The Z Fold8 Ultra gets both ports and the proximity sensor; every other
+# phone (0.4.34) gets the curve for its own panel ports, an approximation of
+# its panel that still beats the image's own phone's curve (below).
+# ColorOS and Infinity-X (OPPO's framework) have their own brightness path
+# (samsung_backlight_curve.py).
 # ONEOS_GUEST_DISPLAY_CONFIG=0 leaves it out.
 # ddc_xml wide: the same curve from the lowest float to 1.0, for a framework
 # whose brightness range is wider than One UI's (HyperOS: 3.66255E-4 to 1.0;
@@ -681,8 +683,6 @@ if [ -e "$ROOTFS/system/framework/oplus-services.jar" ] || [ -L "$ROOTFS/system/
     :
 elif [ "${ONEOS_GUEST_DISPLAY_CONFIG:-1}" != 1 ]; then
     echo "Display config: the image's own (ONEOS_GUEST_DISPLAY_CONFIG=0)"
-elif [ "${ONEOS_GUEST_FORM:-fold}" != fold ] || [ "${ONEOS_PROFILE:-f8u}" != f8u ]; then
-    echo "Display config: the image's own (the panel files are the Z Fold8 Ultra's; profile ${ONEOS_PROFILE:-f8u}, form ${ONEOS_GUEST_FORM:-fold})"
 elif [ ! -d "$PETC" ] || [ -L "$PETC" ]; then
     echo "Display config: no product/etc folder in the image, left out"
 elif mount | grep -q " $PETC type overlay"; then
@@ -705,11 +705,31 @@ else
         $BB mount -t tmpfs -o size=256k,mode=755 tmpfs "$DOV" && $BB mount --make-private "$DOV" 2>/dev/null
     fi
     mkdir -p "$DOV/up/displayconfig"
-    for port in 147 148; do ddc_xml $DDC_RANGE > "$DOV/up/displayconfig/display_port_$port.xml"; done
+    # Every other phone: the same One UI curve for the ports of its own built-in
+    # panels, which the switch read from One UI's SurfaceFlinger
+    # (display_modes_host.log), and no proximity entry (the sensor's name is the
+    # Fold8 Ultra's). Samsung's composer maps the float onto the panel's
+    # backlight linearly on every Galaxy, so an image's own curve (its phone's
+    # panel) aims the slider and auto brightness at the wrong levels: Infinity-X
+    # on the S25 Ultra took 0.28 for 98 nits and 0.0 for 1 nit (0.4.32/0.4.33
+    # reports f0fffbb5, 9d0bf2e2, 3e9af08a), and HyperOS, with no mapping for the
+    # panel at all, sent -1.0 from the slider and sat at 5 of 12750 (cfa53628).
+    DDC_PORTS="147 148"
+    DDC_PROX=1
+    if [ "${ONEOS_GUEST_FORM:-fold}" != fold ] || [ "${ONEOS_PROFILE:-f8u}" != f8u ]; then
+        DDC_PORTS=$(sed -n 's/^Display [0-9]* (HWC display [0-9]*): port=\([0-9]*\) .*/\1/p' "$STAGE/display_modes_host.log" 2>/dev/null | sort -u | tr '\n' ' ')
+        DDC_PROX=0
+    fi
+    [ -n "$DDC_PORTS" ] || echo "Display config: no panel ports from One UI's SurfaceFlinger (display_modes_host.log), none written"
+    for port in $DDC_PORTS; do
+        if [ $DDC_PROX = 1 ]; then ddc_xml $DDC_RANGE
+        else ddc_xml $DDC_RANGE | sed '/<proxSensor>/,/<\/proxSensor>/d'
+        fi > "$DOV/up/displayconfig/display_port_$port.xml"
+    done
     chmod 755 "$DOV/up" "$DOV/up/displayconfig" && chmod 644 "$DOV/up/displayconfig/"*.xml
     $BB chcon -R u:object_r:system_file:s0 "$DOV/up" 2>/dev/null || true
     if $BB mount -t overlay overlay -o "ro,lowerdir=$DOV/up:$PETC" "$PETC"; then
-        echo "Display config: product/etc/displayconfig/display_port_147.xml and 148 (One UI's nits curve, Samsung's IR proximity)"
+        echo "Display config: product/etc/displayconfig/display_port_ for ports ${DDC_PORTS:-none} (One UI's nits curve$([ $DDC_PROX = 1 ] && echo ", Samsung's IR proximity"))"
     else
         echo "Display config: read-only overlay on product/etc refused, left out"
     fi
@@ -867,6 +887,38 @@ if [ -f "$STAGE/MiWallpaper_patched.apk" ] && [ -f "$MIWP_APK" ] && [ "${ONEOS_G
         echo "Bound MiWallpaper_patched.apk -> $MIWP_APK"
     else
         echo "!!! WARNING: MiWallpaper_patched.apk is not in place; the wallpaper app may not start on this phone"
+    fi
+fi
+
+# HyperOS's preinstalled data apps (product/data-app: Weather, Downloads, Game
+# Center, WPS, ...) load their native libraries from /data/app-lib/<app>/arm64,
+# which Xiaomi's preinstaller fills on a Xiaomi phone's first boot. Its
+# installers are stopped in the guest (they took system_server down, 0.4.32),
+# so those folders stayed empty: "dlopen failed: library libxldownload.so /
+# libmmkv.so not found", Weather's shell with no libweather_app.so (S25 Ultra,
+# 0.4.33 report 04857daa). Each app's arm64 libraries are unpacked into the
+# guest's own /data (the stage's) when its folder is missing or empty;
+# ONEOS_GUEST_DATA_APP_LIBS=0 leaves them out.
+if [ -d "$GUEST_PRODUCT/data-app" ] && [ "${ONEOS_GUEST_DATA_APP_LIBS:-1}" = 1 ] && [ -d "$STAGE/data" ] && [ ! -L "$STAGE/data" ]; then
+    DAL="$STAGE/data/app-lib"
+    if [ -L "$DAL" ]; then
+        echo "HyperOS data apps: data/app-lib is a link, not made by OneOS; left alone"
+    else
+        mkdir -p "$DAL" && chown 1000:1000 "$DAL" && chmod 771 "$DAL"
+        DAL_DONE=""
+        for d in "$GUEST_PRODUCT"/data-app/*; do
+            n=${d##*/}; a="$d/$n.apk"
+            [ -f "$a" ] || continue
+            t="$DAL/$n/arm64"
+            [ -L "$DAL/$n" ] || [ -L "$t" ] && continue
+            [ -n "$(ls -A "$t" 2>/dev/null)" ] && continue
+            unzip -l "$a" 2>/dev/null | grep -q " lib/arm64-v8a/[^/]*\.so\$" || continue
+            mkdir -p "$t" && $BB unzip -o -j -q "$a" 'lib/arm64-v8a/*.so' -d "$t" 2>/dev/null &&
+                chown -R 1000:1000 "$DAL/$n" && chmod 755 "$DAL/$n" "$t" && chmod 644 "$t"/*.so &&
+                DAL_DONE="$DAL_DONE $n"
+        done
+        $BB chcon -R u:object_r:apk_data_file:s0 "$DAL" 2>/dev/null || true
+        echo "HyperOS data apps: native libraries unpacked for${DAL_DONE:- none (already there)}"
     fi
 fi
 
